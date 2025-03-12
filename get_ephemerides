@@ -1,0 +1,16 @@
+% Function to get ephemerides
+function ephemerides = get_ephemerides(asteroid, epoch)
+    try
+        % Convert the input epoch in base (1,1,0000) to an ET in seconds of a J2000 Epoch with cspice_str2et.
+        et = cspice_str2et(datestr(epoch, 'yyyy-mm-ddTHH:MM:SS'));
+        % To check the date, print ET and then /86400 which can get the J2000 Epoch.
+        % fprintf('Ephemeris Time (ET): %f\n', et);
+        [state, ~] = cspice_spkezr(asteroid, et, 'J2000', 'NONE', '0'); % 0 for SOLAR SYSTEM BARYCENTER
+        if isempty(state)
+            error('Failed to retrieve state vector for asteroid: %s', asteroid);
+        end
+        ephemerides = state;
+    catch
+        ephemerides = [];
+    end
+end
