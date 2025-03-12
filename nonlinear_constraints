@@ -1,0 +1,44 @@
+function [c, ceq] = nonlinear_constraints(control_vars, r1, V1, r2, V2, delta_v, ...
+    initial_mass, num_segments, segment_time, muC, max_thrust, Isp, g0, dry_mass, departure_asteroid, arrival_asteroid, epoch)
+% Nonlinear constraints: Match point position, velocity, and mass
+
+    control_vars = reshape(control_vars, [], 3); % 30×1 → 10×3, reshape the control vector    
+    %fprintf('u in Nonlinear constraints:\n');
+    %disp(control_vars);
+    %% Forward Propagation
+    [~, ~, ~, forward_match_state, ~] = simulate_forward_with_thrust(...
+        r1, V1, control_vars, initial_mass, num_segments, segment_time, ...
+        muC, max_thrust, Isp, g0, dry_mass);
+
+    %% Backward Propagation
+    [~, ~, mass_til_end, ~, ~] = simulate_forward_with_thrust(...
+        r1, V1, control_vars, initial_mass, num_segments*2, segment_time, ...
+        muC, max_thrust, Isp, g0, dry_mass);
+    final_mass_guess = mass_til_end(end); % Initial guess for optimization
+
+    [~, ~, ~, backward_match_state, ~] = simulate_backward_with_thrust(...
+        r2, V2, control_vars, final_mass_guess, num_segments, segment_time, ...
+        muC, max_thrust, Isp, g0, dry_mass);
+    
+    %% Constraints at match point
+    delta_position = norm(forward_match_state(1:3) - backward_match_state(1:3));
+    delta_velocity = norm(forward_match_state(4:6) - backward_match_state(4:6));
+    delta_mass = abs(forward_match_state(7) - backward_match_state(7));
+    %delta_mass = abs(mass_forward(end) - mass_backward(end));
+
+    fprintf('Match Point Errors:\n Position: %.2f km, Velocity: %.2f km/s, Mass: %.2f kg\n', ...
+    delta_position, delta_velocity, delta_mass);
+
+    position_tolerance = 1e-6; % km
+    %velocity_tolerance = 1e-6; % km/s
+    mass_tolerance = 1e-3;     % kg
+
+    % **匹配点等式约束 (必须满足)**
+    %ceq = [delta_position - position_tolerance; ...
+    %       delta_velocity - velocity_tolerance; ...
+    %       delta_mass - mass_tolerance]; 
+      ceq = [delta_position - position_tolerance; delta_mass - mass_tolerance];
+    
+    % **不等式约束: ΔV_i ≤ ΔVmax**
+    c = []; 
+end
