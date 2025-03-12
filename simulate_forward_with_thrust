@@ -1,0 +1,54 @@
+function [position_forward, velocity_forward, mass_forward, forward_match_state, thrust_points_forward] = simulate_forward_with_thrust(...
+    r1, V1, control_vars, initial_mass, num_segments, segment_time, muC, max_thrust, Isp, g0, dry_mass)
+% Simulates forward propagation with thrust applied at segment midpoints
+% Outputs: position, velocity, and mass after forward propagation, match point state, and thrust application points
+
+%fprintf('Forward propagation using control_vars size: [%d, %d]\n', size(control_vars,1), size(control_vars,2));
+%fprintf('u in forward:\n');
+%disp(control_vars);
+
+    position = r1'; % Initial position
+    velocity = V1'; % Initial velocity
+    mass = initial_mass; % Initial spacecraft mass
+    
+    position_forward = zeros(3, num_segments / 2);
+    velocity_forward = zeros(3, num_segments / 2);
+    mass_forward = zeros(1, num_segments / 2);
+    thrust_points_forward = zeros(3, num_segments / 2); % Points where thrust is applied
+
+    for i = 1:(num_segments/2)
+        % First half of the segment: Kepler propagation
+        [position_half, velocity_half] = kepler(position, velocity, (segment_time/2), muC);
+
+        % Apply thrust at the midpoint
+        thrust_mag = norm(control_vars(i, :)); % Magnitude of thrust
+        %fprintf('Segment %d: Thrust Magnitude = %.6f\n', i, thrust_mag);
+        %disp(control_vars(i, :)); % Display control variable
+
+        % Update mass using the rocket equation
+        mass_loss = (thrust_mag * segment_time)*(max_thrust / (Isp * g0));
+        mass = mass - mass_loss;
+        mass_forward(i) = mass; % Store mass
+        if mass <= dry_mass
+            warning('Mass reached dry mass limit during forward propagation.');
+            break;
+        end
+
+        delta_v_max = (max_thrust / mass) * segment_time;
+        velocity_half = velocity_half + delta_v_max * control_vars(i, :)'; % Update velocity after thrust
+        thrust_points_forward(:, i) = position_half; % Record thrust application point
+
+        % Second half of the segment: Kepler propagation
+        [position, velocity] = kepler(position_half, velocity_half, (segment_time/2), muC);
+
+        % Save state
+        position_forward(:, i) = position;
+        velocity_forward(:, i) = velocity;
+    end
+
+    % Match point state
+    forward_match_state = [position; velocity; mass];
+    %fprintf('forward_match_state:\n');
+    %disp(forward_match_state);
+    
+end
