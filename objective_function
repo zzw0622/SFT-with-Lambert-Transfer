@@ -1,0 +1,61 @@
+function neg_final_mass = objective_function(control_vars, r1, V1, r2, V2, ...
+    delta_v, initial_mass, num_segments, segment_time, muC, max_thrust, Isp, g0, dry_mass)
+% Objective Function: Maximize the spacecraft's final mass (minimize its negative value).
+%
+% Inputs:
+%   control_vars  - Thrust direction and magnitude at each segment (Nx3 matrix)
+%   r1, V1        - Initial position and velocity vectors
+%   r2, V2        - Final position and velocity vectors
+%   initial_mass  - Initial mass of the spacecraft (kg)
+%   tf            - Total flight time (days)
+%   segment_time  - Time per segment (seconds)
+%   muC           - Gravitational parameter of the Sun (km^3/s^2)
+%   Isp           - Specific impulse of the spacecraft propulsion system (s)
+%   g0            - Standard gravity (m/s^2)
+%   dry_mass      - Dry mass of the spacecraft (kg)
+%
+% Output:
+%   neg_final_mass - Negative of the spacecraft's final mass (to be minimized)
+    
+    control_vars = reshape(control_vars, [], 3); % 30×1 → 10×3, reshape the control vector    
+    %fprintf('u in Objecive function:\n');
+    %disp(control_vars);
+
+    
+    %% Forward Propagation: Simulate trajectory from the departure point
+    [~, ~, mass_forward, ~] = simulate_forward_with_thrust(...
+        r1, V1, control_vars, initial_mass, num_segments, segment_time, ...
+        muC, max_thrust, Isp, g0, dry_mass);
+    
+    fprintf('\nForward propagation mass profile:\n');
+    fprintf('Segment: ');
+    fprintf('%3d ', 1:num_segments/2);
+    fprintf('\nMass   : ');
+    fprintf('%7.2f ', mass_forward);
+    fprintf('\n');
+
+    % Extract the last value from mass_forward as the initial mass for backward propagation
+    mass_match_point = mass_forward(end);
+    fprintf('Mass at match point (used for backward propagation): %.2f kg\n', mass_match_point)
+
+    %% Backward Propagation
+    [~, ~, mass_til_end, ~] = simulate_forward_with_thrust(...
+        r1, V1, control_vars, initial_mass, num_segments*2, segment_time, ...
+        muC, max_thrust, Isp, g0, dry_mass);
+    final_mass_guess = mass_til_end(end); % Initial guess for optimization
+    
+    [~, ~, mass_backward, ~] = simulate_backward_with_thrust(...
+        r2, V2, control_vars, final_mass_guess, num_segments, segment_time, ...
+        muC, max_thrust, Isp, g0, dry_mass);
+
+    fprintf('\nBackward propagation mass profile:\n');
+    fprintf('Segment: ');
+    fprintf('%3d ', num_segments/2:-1:1);
+    fprintf('\nMass   : ');
+    fprintf('%7.2f ', mass_backward);
+    fprintf('\n');
+
+    %% Final Objective
+    neg_final_mass = -mass_backward(end); % Optimization goal: maximize final mass
+    fprintf('\nFinal mass (to be optimized): %.2f kg\n', -neg_final_mass);
+end
