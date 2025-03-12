@@ -1,0 +1,56 @@
+function [position_backward, velocity_backward, mass_backward, backward_match_state, thrust_points_backward] = simulate_backward_with_thrust(...
+    r2, V2, control_vars, final_mass_guess, num_segments, segment_time, muC, max_thrust, Isp, g0, dry_mass)
+% Simulates backward propagation with thrust applied at segment midpoints
+% Outputs: position, velocity, and mass after backward propagation, match point state, and thrust application points
+
+% Only use last half control variables (num_segments / 2)
+control_vars = control_vars(num_segments/2+1:end, :);
+%fprintf('Backward propagation using control_vars size: [%d, %d]\n', size(control_vars,1), size(control_vars,2));
+%fprintf('u in background:\n');
+%disp(control_vars);
+
+    position = r2'; % Final position
+    velocity = V2'; % Final velocity
+    mass = final_mass_guess; % This is the optimized final mass
+
+    position_backward = zeros(3, num_segments / 2);
+    velocity_backward = zeros(3, num_segments / 2);
+    mass_backward = zeros(1, num_segments / 2);
+    thrust_points_backward = zeros(3, num_segments / 2); % Points where thrust is applied
+
+    for i = (num_segments/2):-1:1 % Backwards to 1
+        % First half of the segment: Kepler propagation (backward)
+        [position_half, velocity_half] = kepler(position, velocity, -(segment_time/2), muC);
+
+        % Apply thrust at the midpoint
+        thrust_mag = norm(control_vars(i, :)); % Magnitude of thrust
+        %fprintf('Segment %d: Thrust Magnitude = %.6f\n', i, thrust_mag);
+        %disp(control_vars(i, :)); % 显示控制变量
+        
+        % Update mass using the inverse rocket equation (backward)
+        mass_gain = (thrust_mag * segment_time)*(max_thrust / (Isp * g0));
+        mass = mass + mass_gain;
+        mass_backward(i) = mass; % Store mass
+        if mass <= dry_mass
+            warning('Mass reached dry mass limit during backward propagation.');
+            break;
+        end
+
+        % Compute ΔV
+        delta_v_max = (max_thrust / mass) * segment_time;
+        velocity_half = velocity_half + delta_v_max * control_vars(i, :)'; % Update velocity after thrust
+        thrust_points_backward(:, i) = position_half; % Record thrust application point
+
+        % Second half of the segment: Kepler propagation (backward)
+        [position, velocity] = kepler(position_half, velocity_half, -(segment_time/2), muC);
+
+        % Save state
+        position_backward(:, i) = position;
+        velocity_backward(:, i) = velocity;
+    end
+
+    % Match point state
+    backward_match_state = [position; velocity; mass];
+    %fprintf('backward_match_state:\n');
+    %disp(backward_match_state);
+end
