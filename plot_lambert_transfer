@@ -1,0 +1,118 @@
+function plot_lambert_transfer(r1vec, r2vec, V1, V2, tf_days, muC, departure_asteroid, arrival_asteroid, epoch, best_delta_v)
+    % Plot the Lambert transfer trajectory using RK4 method and aiming to reach r2vec
+    tf = tf_days * 86400;  % Convert days to seconds
+    num_points = 1000;  % Increase number of points for better precision
+    dt = tf / (num_points - 1); 
+    %dt = min(tf / (num_points - 1), 1000);% Limit time step to under 500s
+
+
+    % Initialize position and velocity arrays for the Lambert arc
+    positions = zeros(3, num_points);
+    velocities = zeros(3, num_points);
+
+    % Set initial conditions
+    position = r1vec;
+    velocity = V1;
+
+    % Store initial conditions
+    positions(:, 1) = position;
+    velocities(:, 1) = velocity;
+
+    % Define the function to compute acceleration
+    function acc = acceleration(pos)
+        r = norm(pos);  % Calculate distance from the central body
+        acc = -muC * pos / r^3;  % Gravitational acceleration
+    end
+
+    % Implement RK4 integration method for position and velocity
+    for i = 1:(num_points - 1)
+        % Runge-Kutta 4th order method
+        k1_v = acceleration(position) * dt;
+        k1_r = velocity * dt;
+
+        k2_v = acceleration(position + 0.5 * k1_r) * dt;
+        k2_r = (velocity + 0.5 * k1_v) * dt;
+
+        k3_v = acceleration(position + 0.5 * k2_r) * dt;
+        k3_r = (velocity + 0.5 * k2_v) * dt;
+
+        k4_v = acceleration(position + k3_r) * dt;
+        k4_r = (velocity + k3_v) * dt;
+        
+        % Update position and velocity using RK4
+        velocity = velocity + (k1_v + 2*k2_v + 2*k3_v + k4_v) / 6;
+        position = position + (k1_r + 2*k2_r + 2*k3_r + k4_r) / 6;
+
+        % Store the computed positions and velocities
+        positions(:, i+1) = position;
+        velocities(:, i+1) = velocity;
+    end
+
+    % Print the final position and compare with r2vec
+    final_position = positions(:, end);
+    distance_to_target = norm(final_position - r2vec);
+    fprintf('Final position error: %f km\n', distance_to_target);
+
+    % Plot the results
+    figure;
+    hold on;
+
+    % Plot Lambert transfer trajectory in 3D
+    plot3(positions(1, :), positions(2, :), positions(3, :), 'b-', 'LineWidth', 2, 'DisplayName', 'Lambert Transfer');
+
+    % Plot departure and arrival asteroids in 3D
+    plot3(r1vec(1), r1vec(2), r1vec(3), 'go', 'MarkerSize', 10, 'LineWidth', 2, 'DisplayName', 'Departure Asteroid');
+    plot3(r2vec(1), r2vec(2), r2vec(3), 'ro', 'MarkerSize', 10, 'LineWidth', 2, 'DisplayName', 'Arrival Asteroid');
+
+    % Plot the Sun as an orange filled circle at the origin
+    plot3(0, 0, 0, 'o', 'MarkerFaceColor', [1, 0.5, 0], 'MarkerEdgeColor', 'k', 'MarkerSize', 15, 'DisplayName', 'Sun');
+
+    % Compute the orbital period of the departure and arrival asteroids
+    period_dep = compute_orbital_period(muC, norm(r1vec));
+    period_arr = compute_orbital_period(muC, norm(r2vec));
+
+    % Ensure we plot at least one full orbit for each asteroid
+    tf_orbit_dep = max(tf_days, period_dep);  % Ensure at least one orbit period for departure asteroid
+    tf_orbit_arr = max(tf_days, period_arr);  % Ensure at least one orbit period for arrival asteroid
+
+    % Plot dynamic orbit for departure asteroid
+    time_range_dep = linspace(epoch, epoch + tf_orbit_dep + period_dep, 100);  % Ensure full orbit display
+    departure_positions = get_asteroid_positions(departure_asteroid, time_range_dep);
+    plot3(departure_positions(1, :), departure_positions(2, :), departure_positions(3, :), 'g--', 'LineWidth', 1.5, 'DisplayName', 'Departure Asteroid Orbit');
+
+    % Plot dynamic orbit for arrival asteroid
+    time_range_arr = linspace(epoch, epoch + tf_orbit_arr + period_arr, 100);  % Add period_arr to ensure a full orbit is shown
+    arrival_positions = get_asteroid_positions(arrival_asteroid, time_range_arr);
+    plot3(arrival_positions(1, :), arrival_positions(2, :), arrival_positions(3, :), 'r--', 'LineWidth', 1.5, 'DisplayName', 'Arrival Asteroid Orbit');
+
+    % Labels and title
+    xlabel('X (km)', 'FontSize', 14);
+    ylabel('Y (km)', 'FontSize', 14);
+    zlabel('Z (km)', 'FontSize', 14);
+    grid on;
+    title(sprintf('Lambert Transfer from %s to %s\nFinal Best Δv: %.4f km/s, Flight Time: %d days', ...
+        departure_asteroid, arrival_asteroid, best_delta_v, tf_days), 'FontSize', 16);
+
+    % Set the axes to be equal for better representation of 3D space
+    axis equal;
+
+    % Set 3D
+    view(3);  % Set to 3D view
+    legend('FontSize', 12);
+    hold off;
+end
+% Function to compute the orbital period using Kepler's Third Law
+function period = compute_orbital_period(mu, semi_major_axis)
+    period = 2 * pi * sqrt(semi_major_axis^3 / mu) / 86400;  % Period in days
+end
+
+% Function to retrieve asteroid positions over a time range
+function positions = get_asteroid_positions(asteroid, time_range)
+    num_times = length(time_range);
+    positions = zeros(3, num_times);  % Preallocate for speed
+
+    for i = 1:num_times
+        ephemerides = get_ephemerides(asteroid, time_range(i));
+        positions(:, i) = ephemerides(1:3);  % Store position vectors
+    end
+end
