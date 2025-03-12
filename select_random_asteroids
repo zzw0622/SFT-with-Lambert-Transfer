@@ -1,0 +1,10 @@
+% Function for random asteroid selection
+function [asteroid1, asteroid2] = select_random_asteroids()
+    % List of asteroids (as an example)
+    asteroids = {'20000001', '20000002', '20000003', '20000004', '20000005', ...
+                 '20000006', '20000007', '20000008', '20000009', '20000010'};
+    % Randomly select two different asteroids
+    idx = randperm(length(asteroids), 2);
+    asteroid1 = asteroids{idx(1)};
+    asteroid2 = asteroids{idx(2)};
+end
