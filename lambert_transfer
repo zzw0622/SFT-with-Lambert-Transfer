@@ -1,0 +1,110 @@
+function [r1vec, r2vec, best_V1, best_V2, best_delta_v, best_tf, best_way] = lambert_transfer(departure_asteroid, arrival_asteroid, epoch, tf_range, muC)
+    % Input:
+    % departure_asteroid, arrival_asteroid: Ceres01, Pallas02
+    % epoch
+    % tf_range:Grid search flight time by given time range, days
+    % muC: 1.32712440018e11, Standard gravitational parameter of Sun, km³/s²
+    % 
+    % Output:
+    % r1vec, r2vec:1*3, km
+    % best_V1, best_V2, best_delta_v: km/s
+    % best_tf: days
+    % best_way: longway or shortway
+    m = 0;
+    best_delta_v = inf; % Set to infinity initially to ensure first valid delta-V is lower
+    best_tf = NaN;  % Flight time that gives the minimum delta-V
+    best_V1 = NaN;  % Initial velocity for the minimum delta-V case
+    best_V2 = NaN;  % Final velocity for the minimum delta-V case
+    best_way = '';  % To store whether it's short or long way
+    
+    % Get ephemerides of the departure body
+    departure_ephemerides = get_ephemerides(departure_asteroid, epoch);
+    if isempty(departure_ephemerides)
+        error('Failed to retrieve ephemerides for the departure body. Please check SPICE kernel files and asteroid names.');
+    end
+    r1vec = departure_ephemerides(1:3)'; % Position of departure body (km)
+    r2vec = NaN(1,3);    % Arrival position vector for the minimum delta-V case
+    %fprintf('Departure Ephemerides Position (AU): %f\n', norm(departure_ephemerides(1:3))/149597870.7); % Distance from Sun in AU
+    %fprintf('Departure Ephemerides Velocity (km/s): %f\n', norm(departure_ephemerides(4:6)));
+
+    % Grid search flight time
+    % tf_range = tf_min:tf_step:delta_t_LT_max;    
+    for tf_value = tf_range
+        % Retrieve ephemerides for the arrival body
+        arrival_ephemerides = get_ephemerides(arrival_asteroid, epoch + tf_value);
+        if isempty(arrival_ephemerides)
+            error('Failed to retrieve ephemerides for the arrival body.');
+        end
+
+        % Extract arrival position vectors
+    dynamic_r2vec = arrival_ephemerides(1:3)';   % Position of arrival body (km)
+    %fprintf('Arrical Ephemerides Position (AU): %f\n', norm(arrival_ephemerides(1:3))/149597870.7); % Distance from Sun in AU
+    %fprintf('Arrical Ephemerides Velocity (km/s): %f\n', norm(arrival_ephemerides(4:6)));
+    % Call the Lambert solver for short way
+    [V1_short, V2_short, extremal_distances_short, exitflag_short] = lambert(r1vec, dynamic_r2vec, tf_value, m, muC);
+    
+    if exitflag_short == 1
+        % Check if velocity components are valid
+        if all(norm(V1_short) <= 21) && all(norm(V2_short) <= 21)
+        fprintf('V1_short: %.2f km/s, V2_short: %.2f km/s\n', norm(V1_short), norm(V2_short));
+        % Calculate delta-V for short way
+        delta_v1_short = norm(V1_short - departure_ephemerides(4:6)');
+        delta_v2_short = norm(V2_short - arrival_ephemerides(4:6)');
+        delta_v_short = delta_v1_short + delta_v2_short;
+        fprintf('Short way Time: %d days, Δv: %.2f km/s\n', tf_value, delta_v_short);
+        
+        % Update the optimal solution if a better delta-V is found
+        if delta_v_short < best_delta_v
+            best_delta_v = delta_v_short;
+            best_tf = tf_value;
+            best_V1 = V1_short;
+            best_V2 = V2_short;
+            best_way = 'Short way';
+            r2vec = dynamic_r2vec;
+        end
+        else
+        fprintf('Short way - Invalid velocities (exceeds limit): V1=%.2f, V2=%.2f\n', norm(V1_short), norm(V2_short));
+        end
+    end
+    
+    % Call the Lambert solver for long way (negative tf)
+    [V1_long, V2_long, extremal_distances_long, exitflag_long] = lambert(r1vec, dynamic_r2vec, -tf_value, m, muC);
+    
+    if exitflag_long == 1
+        % Check if velocity components are valid
+        if all(norm(V1_long) <= 21) && all(norm(V2_long) <= 21)
+        fprintf('V1_long: %.2f km/s, V2_long: %.2f km/s\n', norm(V1_long), norm(V2_long));
+        % Calculate delta-V for long way
+        delta_v1_long = norm(V1_long - departure_ephemerides(4:6)');
+        delta_v2_long = norm(V2_long - arrival_ephemerides(4:6)');
+        delta_v_long = delta_v1_long + delta_v2_long;
+        fprintf('Long way Time: %d days, Δv: %.2f km/s\n', tf_value, delta_v_long);
+        
+        % Update the optimal solution if a better delta-V is found
+        if delta_v_long < best_delta_v
+            best_delta_v = delta_v_long;
+            best_tf = tf_value;  % Use the positive tf value for consistency
+            best_V1 = V1_long;
+            best_V2 = V2_long;
+            best_way = 'Long way';
+            r2vec = dynamic_r2vec;
+        end
+        else
+        fprintf('Long way - Invalid velocities (exceeds limit): V1=%.2f, V2=%.2f\n', norm(V1_long), norm(V2_long));
+        end   
+    end
+ end
+
+% Print the final best solution
+fprintf('r1vec: %.2f AU\n', norm(r1vec(1:3))/149597870.7);
+fprintf('r2vec: %.2f AU\n', norm(r2vec(1:3))/149597870.7);
+fprintf('best_V1 norm: %.2f km/s\n', norm(best_V1));
+fprintf('best_V2 norm: %.2f km/s\n', norm(best_V2));
+fprintf('Best Δv: %.2f km/s\n', best_delta_v);
+fprintf('Best Flight Time: %d days\n', best_tf);
+fprintf('Best way: %s\n', best_way);
+
+% Plot Lambert transfer using the best solution
+plot_lambert_transfer(r1vec, r2vec, best_V1, best_V2, best_tf, muC, departure_asteroid, arrival_asteroid, epoch, best_delta_v);
+
+end
