@@ -1,0 +1,82 @@
+function [rr, vv] = kepler(rr0, vv0, t, mu)
+% Computes the propagation of Kepler's problem using Lagrangian coefficients.
+% Reference: Battin, p. 170
+%
+% INPUTS:
+%   rr0 (3x1) : Initial position vector [km]
+%   vv0 (3x1) : Initial velocity vector [km/s]
+%   t         : Time of flight [s]
+%   mu        : Gravitational parameter [km^3/s^2]
+%
+% OUTPUTS:
+%   rr (3x1)  : Final position vector [km]
+%   vv (3x1)  : Final velocity vector [km/s]
+%
+% Written by R. Armellin, P. Di Lizia, and F. Topputo on 23/05/2007
+
+% Compute specific angular momentum
+hh = cross(rr0, vv0);   % Angular momentum vector [km^2/s]
+h = norm(hh);           % Angular momentum magnitude [km^2/s]
+
+% Compute initial conditions
+r0 = norm(rr0);         % Initial radius magnitude [km]
+v0 = norm(vv0);         % Initial velocity magnitude [km/s]
+
+% Compute orbital elements
+a = mu / (2*mu/r0 - v0^2); % Semi-major axis [km]
+p = h^2 / mu;              % Semi-latus rectum [km]
+sigma0 = dot(rr0, vv0) / sqrt(mu); % Angular momentum-related parameter [km]
+
+tol = 1;
+iter = 0;
+
+if a > 0  % Elliptical orbit
+    MmM0 = t * sqrt(mu / a^3); % Mean anomaly change [rad]
+    EmE0 = MmM0;  % Initial guess for eccentric anomaly difference [rad]
+
+    % Solve Kepler's equation for elliptical orbit using Newton-Raphson
+    while tol > 1e-14 && iter < 3000
+        iter = iter + 1;
+        fx0 = -MmM0 + EmE0 + sigma0 / sqrt(a) * (1 - cos(EmE0)) - (1 - r0/a) * sin(EmE0);
+        fxp = 1 + sigma0 / sqrt(a) * sin(EmE0) - (1 - r0/a) * cos(EmE0);
+        tol = abs(fx0 / fxp);
+        EmE0 = EmE0 - fx0 / fxp; 
+    end
+
+    % Compute true anomaly
+    theta = 2 * atan2(sqrt(a * p) * tan(EmE0 / 2), r0 + sigma0 * sqrt(a) * tan(EmE0 / 2)); % True anomaly [rad]
+
+    % Compute radius at final position
+    r = p * r0 / (r0 + (p - r0) * cos(theta) - sqrt(p) * sigma0 * sin(theta)); % Final radius magnitude [km]
+
+    % Compute Lagrange coefficients
+    F = 1 - a / r0 * (1 - cos(EmE0));  % Lagrange coefficient (position propagation) [dimensionless]
+    G = a * sigma0 / sqrt(mu) * (1 - cos(EmE0)) + r0 * sqrt(a / mu) * sin(EmE0); % Lagrange coefficient [s]
+    Ft = -sqrt(mu * a) / (r * r0) * sin(EmE0); % Lagrange velocity coefficient [1/s]
+    Gt = 1 - a / r * (1 - cos(EmE0)); % Lagrange velocity coefficient [dimensionless]
+
+else  % Hyperbolic orbit
+    NmN0 = t * sqrt(mu / -a^3); % Hyperbolic mean anomaly change [rad]
+    HmH0 = 0;  % Initial guess for hyperbolic anomaly difference [rad]
+
+    % Solve Kepler's equation for hyperbolic orbit using Newton-Raphson
+    while tol > 1e-14 && iter < 3000
+        iter = iter + 1;
+        fx0 = -NmN0 - HmH0 + sigma0 / sqrt(-a) * (cosh(HmH0) - 1) + (1 - r0/a) * sinh(HmH0);
+        fxp = -1 + sigma0 / sqrt(-a) * sinh(HmH0) + (1 - r0/a) * cosh(HmH0);
+        tol = abs(fx0 / fxp);
+        HmH0 = HmH0 - fx0 / fxp; 
+    end
+
+    % Compute Lagrange coefficients for hyperbolic orbit
+    F = 1 - a / r0 * (1 - cosh(HmH0)); % Lagrange coefficient (position propagation) [dimensionless]
+    G = a * sigma0 / sqrt(mu) * (1 - cosh(HmH0)) + r0 * sqrt(-a / mu) * sinh(HmH0); % Lagrange coefficient [s]
+    r = norm(F * rr0 + G * vv0); % Final radius magnitude [km]
+    Ft = -sqrt(-mu * a) / (r * r0) * sinh(HmH0); % Lagrange velocity coefficient [1/s]
+    Gt = 1 - a / r * (1 - cosh(HmH0)); % Lagrange velocity coefficient [dimensionless]
+end
+
+% Compute the propagated position and velocity using Lagrange coefficients
+rr = F * rr0 + G * vv0; % Final position vector [km]
+vv = Ft * rr0 + Gt * vv0; % Final velocity vector [km/s]
+end
