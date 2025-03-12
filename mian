@@ -39,12 +39,12 @@ initial_thrust_guess = reshape(initial_thrust_guess, [], 1); % (N*3)*1, column v
 
 % Optimization Solver Setup
 options = optimoptions('fmincon', ...
-    'Display', 'iter', ...            % 显示优化过程
-    'Algorithm', 'sqp', ...           % 使用SQP算法
-    'MaxFunctionEvaluations', 200000, ... % 增大函数评估次数上限
-    'MaxIterations', 50000, ...        % 增加最大迭代次数
-    'OptimalityTolerance', 1e-6, ...  % 调整最优性容限
-    'StepTolerance', 1e-10);          % 限制步长精度
+    'Display', 'iter', ...            % Display optimization procedure
+    'Algorithm', 'sqp', ...           % Use SQP
+    'MaxFunctionEvaluations', 200000, ... % Increase the upper limit of function evaluation times
+    'MaxIterations', 50000, ...        % Increase the maximum number of iterations
+    'OptimalityTolerance', 1e-6, ...  % Adjust the optimality tolerance
+    'StepTolerance', 1e-10);          % Limit step size accuracy
 
 % Variable bounds for thrust
 lb = -max_thrust * ones(num_segments, 3);    % Lower bound: - max thrust
