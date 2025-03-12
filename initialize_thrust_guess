@@ -1,0 +1,17 @@
+function thrust_guess = initialize_thrust_guess(initial_velocity, num_segments, max_thrust)
+% Initialize thrust guess based on tangential direction, output is N*3
+    velocity_unit = initial_velocity / norm(initial_velocity);
+    thrust_guess = zeros(num_segments, 3); % N*3
+    for i = 1:num_segments
+        thrust_guess(i, :) = velocity_unit * (max_thrust / 2);
+    end
+    % Add random perturbations
+    thrust_guess = thrust_guess + 0.1 * max_thrust * (rand(size(thrust_guess)) - 0.5);
+    
+    %fprintf('Initial thrust guess:\n');
+    %disp(thrust_guess); % Vrified N*3
+
+    % Print thrust_guess for debugging
+    %fprintf('Thrust guess (num_segments = %d):\n', num_segments);
+    %disp(thrust_guess);
+end
