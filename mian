@@ -1,0 +1,86 @@
+clear all;
+clc;
+
+% Load SPICE kernels and other toolboxes
+addpath('D:\Research\Matlab\Dataset_generate\mice\lib');
+addpath('D:\Research\Matlab\Dataset_generate\mice\src\mice');
+cspice_furnsh('D:\mice\asteroid_kernels.mk');
+cspice_furnsh('D:\mice\data\naif0012.tls.pc');
+
+% Spacecraft Parameters
+initial_mass = 3000; % kg
+dry_mass = 1000;     % kg
+max_thrust = 236e-3; % N
+specific_impulse = 4000; % s
+g0 = 9.81;           % m/s^2
+muC = 1.32712440018e11; % Sun's gravitational parameter, km^3·s^-2
+
+% Mission Parameters
+mission_start_date = datetime(2024, 1, 1);
+mission_end_date = datetime(2034, 1, 1);
+epoch = datenum(mission_start_date) + randi([0, days(mission_end_date - mission_start_date)]);
+
+% Asteroids
+departure_asteroid = '20000001'; % Ceres (Perihelion to Aphelion: 2.5577 AU	- 2.9845 AU)
+arrival_asteroid = '20000004';   % Vesta (Perihelion to Aphelion: 2.1519 AU	- 2.5723 AU)
+
+% Lambert Transfer
+tf_range = 60:50:5*365; % Flight time range in days
+[r1, r2, V1, V2, delta_v, tf, way] = lambert_transfer(...
+    departure_asteroid, arrival_asteroid, epoch, tf_range, muC);
+
+% Transcription Parameters
+num_segments = 10;
+segment_time = (tf * 86400) / num_segments; % in seconds
+
+% Initial thrust guess
+initial_thrust_guess = initialize_thrust_guess(V1, num_segments, max_thrust);% N*3
+initial_thrust_guess = reshape(initial_thrust_guess, [], 1); % (N*3)*1, column vector
+
+% Optimization Solver Setup
+options = optimoptions('fmincon', ...
+    'Display', 'iter', ...            % 显示优化过程
+    'Algorithm', 'sqp', ...           % 使用SQP算法
+    'MaxFunctionEvaluations', 200000, ... % 增大函数评估次数上限
+    'MaxIterations', 50000, ...        % 增加最大迭代次数
+    'OptimalityTolerance', 1e-6, ...  % 调整最优性容限
+    'StepTolerance', 1e-10);          % 限制步长精度
+
+% Variable bounds for thrust
+lb = -max_thrust * ones(num_segments, 3);    % Lower bound: - max thrust
+ub = max_thrust * ones(num_segments, 3);     % Upper bound:   max thrust
+
+% Optimize control variables
+[optimized_controls, neg_final_mass, exitflag] = fmincon(@(control_vars) objective_function(control_vars, r1, V1, ...
+    r2, V2, delta_v, initial_mass, num_segments, segment_time, muC, max_thrust, specific_impulse, g0, dry_mass), ...
+    initial_thrust_guess, [], [], [], [], lb(:), ub(:), ...
+    @(u) nonlinear_constraints(u, r1, V1, r2, V2, delta_v, initial_mass, num_segments, segment_time, ...
+    muC, max_thrust, specific_impulse, g0, dry_mass, departure_asteroid, arrival_asteroid, epoch), options);
+
+% Display final mass
+fprintf('Optimized Final Mass: %.2f kg\n', -neg_final_mass);
+
+fprintf('Optimization exit flag: %d\n', exitflag);
+
+% Reshape optimized_controls: (3*N)*1 → N×3
+optimized_controls = reshape(optimized_controls, [], 3);
+
+% Retrieve forward and backward trajectory data for plotting
+[position_forward, velocity_forward, ~, forward_match_state, thrust_points_forward] = simulate_forward_with_thrust(...
+    r1, V1, optimized_controls, initial_mass, num_segments, segment_time, ...
+    muC, max_thrust, specific_impulse, g0, dry_mass);
+%[~, ~, mass_til_end, ~] = simulate_forward_with_thrust(...
+%        r1, V1, optimized_controls, initial_mass, num_segments*2, segment_time, ...
+%        muC, max_thrust, specific_impulse, g0, dry_mass);
+%    final_mass_guess = mass_til_end(end); % Initial guess for optimization
+[position_backward, velocity_backward, ~, backward_match_state, thrust_points_backward] = simulate_backward_with_thrust(...
+    r2, V2, -optimized_controls, -neg_final_mass, num_segments, segment_time, ...
+    muC, max_thrust, specific_impulse, g0, dry_mass);
+
+% Combine forward and backward positions
+position_SFT = [position_forward, position_backward];
+thrust_points = [thrust_points_forward, thrust_points_backward];
+
+% Plot the trajectory
+plot_sft_trajectory(r1, r2, V1, V2, tf, position_SFT, thrust_points, optimized_controls, ...
+    departure_asteroid, arrival_asteroid, epoch, muC);
