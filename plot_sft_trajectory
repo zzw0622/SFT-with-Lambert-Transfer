@@ -1,0 +1,151 @@
+function plot_sft_trajectory(r1vec, r2vec, v1, v2, t_LT, position_SFT, thrust_points, optimized_controls, departure_asteroid, arrival_asteroid, epoch, muC)
+    % Inputs:
+    % r1vec, r2vec: Initial and final positions (1x3)
+    % position_SFT: All trajectory positions (3xN)
+    % forward_match_position, backward_match_position: Midpoint positions (3x1)
+
+    t_LT = t_LT * 86400;  % Convert days to seconds
+    num_segments = size(position_SFT, 2);  % Number of trajectory segments
+    
+    % Split position_SFT into forward and backward segments
+    forward_positions = position_SFT(:, 1:num_segments/2);  % Forward half
+    forward_match_position = position_SFT(:, num_segments/2);
+    %fprintf('forward_match_position: %.2f AU\n', norm(forward_match_position)/149597870.7);
+    backward_positions = position_SFT(:, num_segments/2+1:end);  % Backward half
+    backward_match_position = position_SFT(:, num_segments/2+1);
+    %fprintf('backward_match_position: %.2f AU\n', norm(backward_match_position)/149597870.7);
+
+    % Midpoint thrust positions
+    forward_thrust_points = thrust_points(:, 1:num_segments/2);
+    backward_thrust_points = thrust_points(:, num_segments/2+1:end);
+    
+    %% Compute the orbital period
+    period_dep = compute_orbital_period(muC, norm(r1vec)); % Period of departure asteroid, days
+    period_arr = compute_orbital_period(muC, norm(r2vec)); % Period of arrival asteroid, days
+
+    % Time ranges for plotting asteroid orbits
+    tf_orbit_dep = max(t_LT/86400, period_dep); 
+    tf_orbit_arr = max(t_LT/86400, period_arr);
+    time_range_dep = linspace(epoch, epoch + tf_orbit_dep, 1000);
+    time_range_arr = linspace(epoch, epoch + tf_orbit_arr, 1000);
+
+    % Get asteroid positions over time
+    departure_positions = get_asteroid_positions(departure_asteroid, time_range_dep);
+    arrival_positions = get_asteroid_positions(arrival_asteroid, time_range_arr);
+
+    %% Plotting
+    figure;
+    hold on;
+
+    % Plot Sun
+    plot3(0, 0, 0, 'o', 'MarkerFaceColor', [1, 0.5, 0], 'MarkerEdgeColor', 'k', 'MarkerSize', 15, 'DisplayName', 'Sun');
+    % Plot departure and arrival asteroid orbits
+    plot3(departure_positions(1, :), departure_positions(2, :), departure_positions(3, :), ...
+          'g--', 'LineWidth', 1.5, 'DisplayName', 'Departure Asteroid Orbit');
+    plot3(arrival_positions(1, :), arrival_positions(2, :), arrival_positions(3, :), ...
+          'r--', 'LineWidth', 1.5, 'DisplayName', 'Arrival Asteroid Orbit');
+    % Plot departure and arrival asteroid positions
+    plot3(r1vec(1), r1vec(2), r1vec(3), 'go', 'MarkerSize', 10, 'LineWidth', 2, 'DisplayName', 'Departure Asteroid');
+    plot3(r2vec(1), r2vec(2), r2vec(3), 'ro', 'MarkerSize', 10, 'LineWidth', 2, 'DisplayName', 'Arrival Asteroid');
+
+    % Plot forward segment from r1vec to first half of position_SFT
+    plot3([r1vec(1), forward_positions(1, 1)], ...
+          [r1vec(2), forward_positions(2, 1)], ...
+          [r1vec(3), forward_positions(3, 1)], 'b-', 'LineWidth', 2, 'DisplayName', 'Forward Segment Start');
+    first_thrust_vector = true;
+    first_segment_divider = true;
+    for i = 1:(num_segments/2 - 1)
+        % Plot segment
+        plot3([forward_positions(1, i), forward_positions(1, i+1)], ...
+              [forward_positions(2, i), forward_positions(2, i+1)], ...
+              [forward_positions(3, i), forward_positions(3, i+1)], 'b-', 'LineWidth', 2, 'HandleVisibility', 'off');
+        
+        % Plot segment divider only once in legend
+        if first_segment_divider
+            plot3(forward_positions(1, i), forward_positions(2, i), forward_positions(3, i), ...
+              'ko', 'LineWidth', 1, 'MarkerSize', 3, 'DisplayName', 'Segment Divider');
+            first_segment_divider = false;
+        else
+            plot3(forward_positions(1, i), forward_positions(2, i), forward_positions(3, i), ...
+              'ko', 'LineWidth', 1, 'MarkerSize', 3, 'HandleVisibility', 'off');
+        end
+    end
+    for i = 1:(num_segments/2)
+        % Plot thrust vector
+        forward_controls = optimized_controls(1:num_segments/2, :);
+        forward_unit_thrust = forward_controls ./ vecnorm(forward_controls, 2, 2);
+        scale_factor = 1e6; % Adjust this value to scale the thrust vector
+        if first_thrust_vector
+            quiver3(forward_thrust_points(1, i), forward_thrust_points(2, i), forward_thrust_points(3, i), ...
+                scale_factor * forward_unit_thrust(i, 1), ...
+                scale_factor * forward_unit_thrust(i, 2), ...
+                scale_factor * forward_unit_thrust(i, 3), ...
+                'm', 'LineWidth', 2, 'MaxHeadSize', 0.5, 'DisplayName', 'Thrust Vector');
+            first_thrust_vector = false;
+        else
+            quiver3(forward_thrust_points(1, i), forward_thrust_points(2, i), forward_thrust_points(3, i), ...
+                scale_factor * forward_unit_thrust(i, 1), ...
+                scale_factor * forward_unit_thrust(i, 2), ...
+                scale_factor * forward_unit_thrust(i, 3), ...
+                'm', 'LineWidth', 2, 'MaxHeadSize', 0.5, 'HandleVisibility', 'off');
+        end
+    end
+
+    % Plot backward segment from r2vec to last half of position_SFT
+    plot3([r2vec(1), backward_positions(1, end)], ...
+          [r2vec(2), backward_positions(2, end)], ...
+          [r2vec(3), backward_positions(3, end)], 'r-', 'LineWidth', 2, 'DisplayName', 'Backward Segment Start');
+    for i = num_segments/2:-1:2
+        plot3([backward_positions(1, i), backward_positions(1, i-1)], ...
+              [backward_positions(2, i), backward_positions(2, i-1)], ...
+              [backward_positions(3, i), backward_positions(3, i-1)], 'r-', 'LineWidth', 2, 'HandleVisibility', 'off');
+        % Plot segment divider (black vertical line)
+        % Plot segment divider only once in legend
+        plot3(backward_positions(1, i), backward_positions(2, i), backward_positions(3, i), ...
+          'ko', 'LineWidth', 1, 'MarkerSize', 3, 'HandleVisibility', 'off');
+    end
+    for i = num_segments/2:-1:1
+        % Plot thrust vector
+        backward_controls = optimized_controls(num_segments/2+1:end, :);
+        backward_unit_thrust = backward_controls ./ vecnorm(backward_controls, 2, 2);
+        scale_factor = 1e6;
+        quiver3(backward_thrust_points(1, i), backward_thrust_points(2, i), backward_thrust_points(3, i), ...
+            scale_factor * backward_unit_thrust(i, 1), ...
+            scale_factor * backward_unit_thrust(i, 2), ...
+            scale_factor * backward_unit_thrust(i, 3), ...
+            'm', 'LineWidth', 2, 'MaxHeadSize', 0.5, 'HandleVisibility', 'off');
+    end
+
+    % Plot forward and backward match points
+    plot3(forward_match_position(1), forward_match_position(2), forward_match_position(3), ...
+          '^', 'MarkerSize', 10, 'MarkerEdgeColor', 'magenta', 'MarkerFaceColor', 'magenta', 'DisplayName', 'Forward Match Point');
+    plot3(backward_match_position(1), backward_match_position(2), backward_match_position(3), ...
+          'v', 'MarkerSize', 10, 'MarkerEdgeColor', 'cyan', 'MarkerFaceColor', 'cyan', 'DisplayName', 'Backward Match Point');
+
+    % Add labels and title
+    xlabel('X (km)','FontSize', 14);
+    ylabel('Y (km)','FontSize', 14);
+    zlabel('Z (km)','FontSize', 14);
+    title('3D SFT Trajectory Plot','FontSize', 16);
+    legend('FontSize', 14);
+    grid on;
+    axis equal;
+    view(3);
+    hold off;
+end
+
+function period = compute_orbital_period(mu, semi_major_axis)
+    period = 2 * pi * sqrt(semi_major_axis^3 / mu) / 86400;  % Period in days
+end
+
+function positions = get_asteroid_positions(asteroid, time_range)
+    num_times = length(time_range);
+    positions = zeros(3, num_times);  % Preallocate for speed
+    for i = 1:num_times
+        ephemerides = get_ephemerides(asteroid, time_range(i));
+        if isempty(ephemerides)
+            error('Ephemerides not found for asteroid at time %f.', time_range(i));
+        end
+        positions(:, i) = ephemerides(1:3);  % Store position vectors
+    end
+end
